@@ -5,32 +5,27 @@ import time
 import json
 import os
 
-# --- [1] КОНФІГУРАЦІЯ ---
-# Твій новий токен:
-TOKEN = "8316043913:AAFJFjGapMK62ktJD3LhhPphceJ1BBi_P4A"
+# --- [1] КОНФИГУРАЦИЯ ---
+TOKEN = "8652514075:AAFYxclIzQ2uoNF7Ub0W3Yg24gL17gFt-p8"
 ADMINS = ["verybigsun", "Nazikrrk"] 
 bot = telebot.TeleBot(TOKEN)
 
-FILES = {
-    'cards': 'cards_data.json', 
-    'colls': 'collections_data.json', 
-    'users': 'users_stats.json'
-}
+FILES = {'cards': 'cards_data.json', 'colls': 'collections_data.json', 'users': 'users_stats.json'}
 
+# Настройка очков за звезды
 STATS = {
-    1: {"chance": 40, "score": 1000},
-    2: {"chance": 30, "score": 2000},
-    3: {"chance": 20, "score": 4000},
-    4: {"chance": 10, "score": 6000},
-    5: {"chance": 5, "score": 10000}
+    1: {"score": 1000},
+    2: {"score": 2000},
+    3: {"score": 4000},
+    4: {"score": 6000},
+    5: {"score": 10000}
 }
 
-# --- [2] БД ФУНКЦІЇ ---
+# --- [2] ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 def load_db(key):
     if not os.path.exists(FILES[key]):
         res = {} if key in ['users', 'colls'] else []
-        with open(FILES[key], 'w', encoding='utf-8') as f:
-            json.dump(res, f, ensure_ascii=False, indent=4)
+        save_db(res, key)
         return res
     with open(FILES[key], 'r', encoding='utf-8') as f:
         try: return json.load(f)
@@ -40,103 +35,132 @@ def save_db(data, key):
     with open(FILES[key], 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-cooldowns = {}
+def get_stars(count):
+    """Превращает число 3 в ⭐⭐⭐"""
+    try:
+        count = int(count)
+        return "⭐" * count
+    except:
+        return "⭐"
 
-# --- [3] КЛАВІАТУРА ---
+# --- [3] КЛАВИАТУРЫ ---
 def main_kb(user):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row("🎰 Крутити карту", "🗂 Коллекция")
-    markup.row("👤 Профіль", "🏆 Топ по очкам") # Кнопка профіль тепер тут
-    
-    is_adm = False
+    markup.row("🎰 Крутить карту", "🗂 Коллекция")
+    markup.row("👤 Профиль", "🏆 Топ игроков")
+    markup.row("💎 Премиум")
     if user.username and user.username.lower() in [a.lower() for a in ADMINS]:
-        is_adm = True
-    
-    if is_adm:
         markup.add("🛠 Админ-панель")
     return markup
 
-# --- [4] ОБРОБНИКИ ОСНОВНИХ КОМАНД ---
+def admin_kb():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row("➕ Добавить карту", "🗑 Удалить карту")
+    markup.row("🏠 Назад в меню")
+    return markup
+
+# --- [4] ЛОГИКА ИГРЫ ---
 
 @bot.message_handler(commands=['start'])
 def start(m):
     uid = str(m.from_user.id)
-    users_data = load_db('users')
-    
-    if uid not in users_data:
-        users_data[uid] = {"score": 0, "username": m.from_user.username or f"user_{uid}"}
-        save_db(users_data, 'users')
-    
-    # Текст для перевірки оновлення
-    bot.send_message(m.chat.id, "♻️ БОТ ОНОВЛЕНИЙ (НОВИЙ ТОКЕН)!\nВсі системи готові до роботи.", reply_markup=main_kb(m.from_user))
+    users = load_db('users')
+    if uid not in users:
+        users[uid] = {"score": 0, "username": m.from_user.username or f"user_{uid}"}
+        save_db(users, 'users')
+    bot.send_message(m.chat.id, "⚽️ **Добро пожаловать в Football Cards!**\nСобирай лучших игроков и забирай топ рейтинга.", 
+                     reply_markup=main_kb(m.from_user), parse_mode="Markdown")
 
-@bot.message_handler(func=lambda m: m.text and "Профіль" in m.text)
-def profile(m):
-    uid = str(m.from_user.id)
-    users_data = load_db('users')
-    user_colls = load_db('colls')
-    u = users_data.get(uid, {"score": 0, "username": "Гість"})
-    col = len(user_colls.get(uid, []))
-    
-    txt = (f"👤 *ТВІЙ ПРОФІЛЬ:*\n\n"
-           f"🆔 ID: `{uid}`\n"
-           f"💠 Очки: `{u['score']:,}`\n"
-           f"🗂 Карт у колекції: `{col}`")
-    bot.send_message(m.chat.id, txt, parse_mode="Markdown")
-
-@bot.message_handler(func=lambda m: m.text and "Крутити" in m.text)
+@bot.message_handler(func=lambda m: m.text == "🎰 Крутить карту")
 def roll(m):
     uid = str(m.from_user.id)
     cards = load_db('cards')
-    users_data = load_db('users')
-    user_colls = load_db('colls')
+    users = load_db('users')
+    colls = load_db('colls')
 
     if not cards:
-        return bot.send_message(m.chat.id, "❌ У базі ще немає карт. Додай їх через адмін-панель!")
+        return bot.send_message(m.chat.id, "❌ В игре пока нет карточек!")
 
-    # Рандомний вибір карти
     won = random.choice(cards)
     
-    # Логіка очок (спрощена для тесту)
-    pts = 1000
-    users_data[uid]['score'] += pts
-    save_db(users_data, 'users')
+    # Проверка на дубликат
+    if uid not in colls: colls[uid] = []
+    is_new = not any(c['name'] == won['name'] for c in colls[uid])
     
-    bot.send_photo(m.chat.id, won['photo'], caption=f"⚽️ Вітаємо! Ви вибили карту: *{won['name']}*\n\n💠 Очки: +{pts}", parse_mode="Markdown")
+    # Расчет очков
+    base_pts = STATS.get(int(won['stars']), {"score": 500})["score"]
+    added_pts = base_pts if is_new else int(base_pts * 0.3)
+    
+    users[uid]['score'] += added_pts
+    if is_new:
+        colls[uid].append(won)
+        save_db(colls, 'colls')
+    save_db(users, 'users')
 
-# --- [5] АДМІН-СИСТЕМА (Назва -> Рейтинг -> Позиція -> Фото) ---
+    status = "🆕 Новая карта!" if is_new else "♻️ Повторка"
+    stars_visual = get_stars(won['stars'])
+    
+    # КРАСИВОЕ ОФОРМЛЕНИЕ ОПИСАНИЯ
+    caption = (
+        f"⚽️ **{won['name']}** ({status})\n"
+        f" — — — — — — — — — —\n"
+        f"🎯 **Позиция:** `{won['pos']}`\n"
+        f"📊 **Рейтинг:** {stars_visual}\n"
+        f" — — — — — — — — — —\n"
+        f"💠 **Очки:** `+{added_pts:,}` | Всего: `{users[uid]['score']:,}`"
+    )
+
+    bot.send_photo(m.chat.id, won['photo'], caption=caption, parse_mode="Markdown")
+
+@bot.message_handler(func=lambda m: m.text == "👤 Профиль")
+def profile(m):
+    uid = str(m.from_user.id)
+    u = load_db('users').get(uid, {"score": 0})
+    c = len(load_db('colls').get(uid, []))
+    
+    text = (
+        f"👤 **ВАШ ПРОФИЛЬ**\n"
+        f" — — — — — — — —\n"
+        f"🆔 ID: `{uid}`\n"
+        f"💠 Очки: `{u['score']:,}`\n"
+        f"🗂 Коллекция: `{c}` шт.\n"
+        f" — — — — — — — —"
+    )
+    bot.send_message(m.chat.id, text, parse_mode="Markdown")
+
+@bot.message_handler(func=lambda m: m.text == "💎 Премиум")
+def prem(m):
+    bot.send_message(m.chat.id, "💎 **Премиум статус**\n\n• Крутки без КД\n• Удвоенные очки за новые карты\n\n✉️ Купить: @verybigsun", parse_mode="Markdown")
+
+# --- [5] АДМИН-ПАНЕЛЬ ---
+
 @bot.message_handler(func=lambda m: m.text == "🛠 Админ-панель")
-def admin_p(m):
-    # Перевірка адміна ще раз для безпеки
+def adm(m):
     if m.from_user.username and m.from_user.username.lower() in [a.lower() for a in ADMINS]:
-        kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        kb.add("➕ Добавить карту", "🏠 Назад в меню")
-        bot.send_message(m.chat.id, "🛠 Панель керування:", reply_markup=kb)
+        bot.send_message(m.chat.id, "🛠 **Режим редактирования:**", reply_markup=admin_kb())
 
 @bot.message_handler(func=lambda m: m.text == "➕ Добавить карту")
-def add_1(m):
-    msg = bot.send_message(m.chat.id, "1️⃣ Введіть НАЗВУ гравця:")
-    bot.register_next_step_handler(msg, add_2)
+def add_start(m):
+    msg = bot.send_message(m.chat.id, "Введите ИМЯ игрока:")
+    bot.register_next_step_handler(msg, add_step_stars)
 
-def add_2(m):
+def add_step_stars(m):
     name = m.text
-    msg = bot.send_message(m.chat.id, "2️⃣ Введіть РЕЙТИНГ (1-5 зірок):")
-    bot.register_next_step_handler(msg, add_3, name)
+    msg = bot.send_message(m.chat.id, f"Введите РЕЙТИНГ (число 1-5) для {name}:")
+    bot.register_next_step_handler(msg, add_step_pos, name)
 
-def add_3(m, name):
+def add_step_pos(m, name):
     stars = m.text
-    msg = bot.send_message(m.chat.id, "3️⃣ Введіть ПОЗИЦІЮ (ST, GK, LW...):")
-    bot.register_next_step_handler(msg, add_4, name, stars)
+    msg = bot.send_message(m.chat.id, f"Введите ПОЗИЦИЮ (напр. Вратарь, Нападающий):")
+    bot.register_next_step_handler(msg, add_step_photo, name, stars)
 
-def add_4(m, name, stars):
+def add_step_photo(m, name, stars):
     pos = m.text
-    msg = bot.send_message(m.chat.id, "4️⃣ Надішліть ФОТО для цієї карти:")
-    bot.register_next_step_handler(msg, add_fin, name, stars, pos)
+    msg = bot.send_message(m.chat.id, f"Отправьте ФОТО игрока {name}:")
+    bot.register_next_step_handler(msg, add_final, name, stars, pos)
 
-def add_fin(m, name, stars, pos):
-    if not m.photo:
-        return bot.send_message(m.chat.id, "❌ Потрібно надіслати фото! Спробуй ще раз.")
-    
+def add_final(m, name, stars, pos):
+    if not m.photo: return bot.send_message(m.chat.id, "❌ Ошибка: нужно фото.")
     cards = load_db('cards')
     cards.append({
         "name": name, 
@@ -145,11 +169,12 @@ def add_fin(m, name, stars, pos):
         "photo": m.photo[-1].file_id
     })
     save_db(cards, 'cards')
-    bot.send_message(m.chat.id, f"✅ Карта {name} успішно додана!", reply_markup=main_kb(m.from_user))
+    bot.send_message(m.chat.id, "✅ Карта успешно создана!", reply_markup=admin_kb())
 
-@bot.message_handler(func=lambda m: "Назад" in m.text)
+@bot.message_handler(func=lambda m: m.text == "🏠 Назад в меню")
 def back(m):
-    bot.send_message(m.chat.id, "Головне меню:", reply_markup=main_kb(m.from_user))
+    bot.send_message(m.chat.id, "Главное меню:", reply_markup=main_kb(m.from_user))
 
-print("Бот запущений на новому токені...")
-bot.infinity_polling()
+if __name__ == '__main__':
+    print("Бот в сети...")
+    bot.infinity_polling()
