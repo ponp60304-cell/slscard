@@ -68,7 +68,9 @@ def start(m):
     if uid not in users:
         users[uid] = {"score": 0, "username": m.from_user.username or f"user_{uid}"}
         save_db(users, 'users')
-    bot.send_message(m.chat.id, "⚽️ **Добро пожаловать в Football Cards!**\nСобирай лучших игроков и забирай топ рейтинга.", 
+    
+    # ТВОЕ НОВОЕ ПРИВЕТСТВИЕ
+    bot.send_message(m.chat.id, "👋 Привет! Это бот СЛС карточек.", 
                      reply_markup=main_kb(m.from_user), parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: m.text == "🎰 Крутить карту")
@@ -83,11 +85,9 @@ def roll(m):
 
     won = random.choice(cards)
     
-    # Проверка на дубликат
     if uid not in colls: colls[uid] = []
     is_new = not any(c['name'] == won['name'] for c in colls[uid])
     
-    # Расчет очков
     base_pts = STATS.get(int(won['stars']), {"score": 500})["score"]
     added_pts = base_pts if is_new else int(base_pts * 0.3)
     
@@ -100,7 +100,7 @@ def roll(m):
     status = "🆕 Новая карта!" if is_new else "♻️ Повторка"
     stars_visual = get_stars(won['stars'])
     
-    # КРАСИВОЕ ОФОРМЛЕНИЕ ОПИСАНИЯ
+    # ОФОРМЛЕНИЕ КАРТОЧКИ
     caption = (
         f"⚽️ **{won['name']}** ({status})\n"
         f" — — — — — — — — — —\n"
@@ -171,10 +171,28 @@ def add_final(m, name, stars, pos):
     save_db(cards, 'cards')
     bot.send_message(m.chat.id, "✅ Карта успешно создана!", reply_markup=admin_kb())
 
+@bot.message_handler(func=lambda m: m.text == "🗑 Удалить карту")
+def delete_card_menu(m):
+    cards = load_db('cards')
+    if not cards: return bot.send_message(m.chat.id, "База пуста.")
+    
+    markup = types.InlineKeyboardMarkup()
+    for c in cards:
+        markup.add(types.InlineKeyboardButton(f"❌ Удалить {c['name']}", callback_data=f"del_{c['name']}"))
+    bot.send_message(m.chat.id, "Выберите карту для удаления:", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("del_"))
+def del_callback(call):
+    name = call.data.split("_")[1]
+    cards = load_db('cards')
+    new_cards = [c for c in cards if c['name'] != name]
+    save_db(new_cards, 'cards')
+    bot.edit_message_text(f"✅ Карта {name} удалена!", call.message.chat.id, call.message.message_id)
+
 @bot.message_handler(func=lambda m: m.text == "🏠 Назад в меню")
 def back(m):
     bot.send_message(m.chat.id, "Главное меню:", reply_markup=main_kb(m.from_user))
 
 if __name__ == '__main__':
-    print("Бот в сети...")
+    print("Бот запущен...")
     bot.infinity_polling()
