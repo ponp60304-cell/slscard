@@ -6,11 +6,16 @@ import json
 import os
 
 # --- [1] КОНФІГУРАЦІЯ ---
-TOKEN = "8728235198:AAGMHfBZw0UCnOk_0DUsB7VbDt8fiWua8Ik"
+# Твій новий токен:
+TOKEN = "8316043913:AAFJFjGapMK62ktJD3LhhPphceJ1BBi_P4A"
 ADMINS = ["verybigsun", "Nazikrrk"] 
 bot = telebot.TeleBot(TOKEN)
 
-FILES = {'cards': 'cards_data.json', 'colls': 'collections_data.json', 'users': 'users_stats.json'}
+FILES = {
+    'cards': 'cards_data.json', 
+    'colls': 'collections_data.json', 
+    'users': 'users_stats.json'
+}
 
 STATS = {
     1: {"chance": 40, "score": 1000},
@@ -41,9 +46,8 @@ cooldowns = {}
 def main_kb(user):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row("🎰 Крутити карту", "🗂 Коллекция")
-    markup.row("👤 Профіль", "🏆 Топ по очкам") # КНОПКА ТУТ
+    markup.row("👤 Профіль", "🏆 Топ по очкам") # Кнопка профіль тепер тут
     
-    # Перевірка на адміна
     is_adm = False
     if user.username and user.username.lower() in [a.lower() for a in ADMINS]:
         is_adm = True
@@ -52,7 +56,7 @@ def main_kb(user):
         markup.add("🛠 Админ-панель")
     return markup
 
-# --- [4] ОБРОБНИКИ ---
+# --- [4] ОБРОБНИКИ ОСНОВНИХ КОМАНД ---
 
 @bot.message_handler(commands=['start'])
 def start(m):
@@ -63,8 +67,8 @@ def start(m):
         users_data[uid] = {"score": 0, "username": m.from_user.username or f"user_{uid}"}
         save_db(users_data, 'users')
     
-    # Змінив текст, щоб ти точно бачив, що це НОВИЙ код
-    bot.send_message(m.chat.id, "♻️ БОТ ОНОВЛЕНИЙ! Кнопки готові.", reply_markup=main_kb(m.from_user))
+    # Текст для перевірки оновлення
+    bot.send_message(m.chat.id, "♻️ БОТ ОНОВЛЕНИЙ (НОВИЙ ТОКЕН)!\nВсі системи готові до роботи.", reply_markup=main_kb(m.from_user))
 
 @bot.message_handler(func=lambda m: m.text and "Профіль" in m.text)
 def profile(m):
@@ -73,56 +77,79 @@ def profile(m):
     user_colls = load_db('colls')
     u = users_data.get(uid, {"score": 0, "username": "Гість"})
     col = len(user_colls.get(uid, []))
-    txt = f"👤 *ПРОФІЛЬ:*\n\nID: `{uid}`\nОчки: `{u['score']:,}`\nКарт: `{col}`"
+    
+    txt = (f"👤 *ТВІЙ ПРОФІЛЬ:*\n\n"
+           f"🆔 ID: `{uid}`\n"
+           f"💠 Очки: `{u['score']:,}`\n"
+           f"🗂 Карт у колекції: `{col}`")
     bot.send_message(m.chat.id, txt, parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: m.text and "Крутити" in m.text)
 def roll(m):
     uid = str(m.from_user.id)
     cards = load_db('cards')
+    users_data = load_db('users')
+    user_colls = load_db('colls')
+
     if not cards:
-        return bot.send_message(m.chat.id, "❌ Додайте карти в адмінці!")
-    
+        return bot.send_message(m.chat.id, "❌ У базі ще немає карт. Додай їх через адмін-панель!")
+
+    # Рандомний вибір карти
     won = random.choice(cards)
-    bot.send_photo(m.chat.id, won['photo'], caption=f"⚽️ Ви вибили: {won['name']}")
+    
+    # Логіка очок (спрощена для тесту)
+    pts = 1000
+    users_data[uid]['score'] += pts
+    save_db(users_data, 'users')
+    
+    bot.send_photo(m.chat.id, won['photo'], caption=f"⚽️ Вітаємо! Ви вибили карту: *{won['name']}*\n\n💠 Очки: +{pts}", parse_mode="Markdown")
 
 # --- [5] АДМІН-СИСТЕМА (Назва -> Рейтинг -> Позиція -> Фото) ---
 @bot.message_handler(func=lambda m: m.text == "🛠 Админ-панель")
 def admin_p(m):
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("➕ Добавить карту", "🏠 Назад в меню")
-    bot.send_message(m.chat.id, "🛠 Адмінка:", reply_markup=kb)
+    # Перевірка адміна ще раз для безпеки
+    if m.from_user.username and m.from_user.username.lower() in [a.lower() for a in ADMINS]:
+        kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        kb.add("➕ Добавить карту", "🏠 Назад в меню")
+        bot.send_message(m.chat.id, "🛠 Панель керування:", reply_markup=kb)
 
 @bot.message_handler(func=lambda m: m.text == "➕ Добавить карту")
 def add_1(m):
-    msg = bot.send_message(m.chat.id, "1️⃣ Назва гравця:")
+    msg = bot.send_message(m.chat.id, "1️⃣ Введіть НАЗВУ гравця:")
     bot.register_next_step_handler(msg, add_2)
 
 def add_2(m):
     name = m.text
-    msg = bot.send_message(m.chat.id, "2️⃣ Рейтинг (1-5):")
+    msg = bot.send_message(m.chat.id, "2️⃣ Введіть РЕЙТИНГ (1-5 зірок):")
     bot.register_next_step_handler(msg, add_3, name)
 
 def add_3(m, name):
     stars = m.text
-    msg = bot.send_message(m.chat.id, "3️⃣ Позиція (ST, GK...):")
+    msg = bot.send_message(m.chat.id, "3️⃣ Введіть ПОЗИЦІЮ (ST, GK, LW...):")
     bot.register_next_step_handler(msg, add_4, name, stars)
 
 def add_4(m, name, stars):
     pos = m.text
-    msg = bot.send_message(m.chat.id, "4️⃣ Надішліть фото:")
+    msg = bot.send_message(m.chat.id, "4️⃣ Надішліть ФОТО для цієї карти:")
     bot.register_next_step_handler(msg, add_fin, name, stars, pos)
 
 def add_fin(m, name, stars, pos):
-    if not m.photo: return bot.send_message(m.chat.id, "❌ Потрібне фото!")
+    if not m.photo:
+        return bot.send_message(m.chat.id, "❌ Потрібно надіслати фото! Спробуй ще раз.")
+    
     cards = load_db('cards')
-    cards.append({"name": name, "stars": int(stars), "pos": pos, "photo": m.photo[-1].file_id})
+    cards.append({
+        "name": name, 
+        "stars": int(stars) if stars.isdigit() else 1, 
+        "pos": pos, 
+        "photo": m.photo[-1].file_id
+    })
     save_db(cards, 'cards')
-    bot.send_message(m.chat.id, "✅ Карта додана!", reply_markup=main_kb(m.from_user))
+    bot.send_message(m.chat.id, f"✅ Карта {name} успішно додана!", reply_markup=main_kb(m.from_user))
 
 @bot.message_handler(func=lambda m: "Назад" in m.text)
 def back(m):
-    bot.send_message(m.chat.id, "Меню:", reply_markup=main_kb(m.from_user))
+    bot.send_message(m.chat.id, "Головне меню:", reply_markup=main_kb(m.from_user))
 
-print("Бот запущений...")
+print("Бот запущений на новому токені...")
 bot.infinity_polling()
