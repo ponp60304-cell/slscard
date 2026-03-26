@@ -6,7 +6,7 @@ import json
 import os
 
 # --- [1] КОНФІГУРАЦІЯ ---
-TOKEN = "8652514075:AAFYxclIzQ2uoNF7Ub0W3Yg24gL17gFt-p8"
+TOKEN = "8316043913:AAFJFjGapMK62ktJD3LhhPphceJ1BBi_P4A"
 ADMINS = ["verybigsun", "Nazikrrk"] 
 bot = telebot.TeleBot(TOKEN)
 
@@ -210,4 +210,3 @@ def back(m):
     bot.send_message(m.chat.id, "Главное меню:", reply_markup=main_kb(m.from_user))
 
 bot.infinity_polling()
-
