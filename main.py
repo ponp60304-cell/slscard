@@ -6,7 +6,7 @@ import json
 import os
 
 # --- [1] КОНФИГУРАЦИЯ ---
-TOKEN = "8728235198:AAGMHfBZw0UCnOk_0DUsB7VbDt8fiWua8Ik"
+TOKEN = "8652514075:AAFYxclIzQ2uoNF7Ub0W3Yg24gL17gFt-p8"
 ADMINS = ["verybigsun", "Nazikrrk"] 
 bot = telebot.TeleBot(TOKEN)
 
