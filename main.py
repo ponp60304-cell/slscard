@@ -5,13 +5,13 @@ import time
 import json
 import os
 
-# --- [1] КОНФІГУРАЦІЯ ---
+# --- [1] КОНФИГУРАЦИЯ ---
 TOKEN = "8316043913:AAFJFjGapMK62ktJD3LhhPphceJ1BBi_P4A"
 ADMINS = ["verybigsun", "Nazikrrk"] 
 bot = telebot.TeleBot(TOKEN)
 
-# Налаштування КД (в секундах)
-COOLDOWN_TIME = 60 
+# Настройка КД (в секундах). 3600 сек = 1 час.
+COOLDOWN_TIME = 3600 
 
 FILES = {'cards': 'cards_data.json', 'colls': 'collections_data.json', 'users': 'users_stats.json'}
 
@@ -23,10 +23,9 @@ STATS = {
     5: {"score": 10000}
 }
 
-# Словник для збереження часу останньої крутки
 last_roll = {}
 
-# --- [2] БД ФУНКЦІЇ ---
+# --- [2] БД ФУНКЦИИ ---
 def load_db(key):
     if not os.path.exists(FILES[key]):
         res = {} if key in ['users', 'colls'] else []
@@ -43,10 +42,9 @@ def save_db(data, key):
 def get_stars(count):
     return "⭐" * int(count)
 
-# --- [3] КЛАВІАТУРИ ---
+# --- [3] КЛАВИАТУРЫ ---
 def main_kb(user):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    # ЗМІНЕНО НАЗВУ КНОПКИ
     markup.row("🎰 Получить карту", "🗂 Коллекция")
     markup.row("👤 Профиль", "🏆 Топ игроков")
     markup.row("💎 Премиум")
@@ -71,16 +69,17 @@ def roll(m):
     username = m.from_user.username or ""
     is_admin = username.lower() in [a.lower() for a in ADMINS]
 
-    # ПЕРЕВІРКА КД (пропускаємо, якщо адмін)
+    # ПРОВЕРКА КД
     if not is_admin:
         now = time.time()
         if uid in last_roll:
             elapsed = now - last_roll[uid]
             if elapsed < COOLDOWN_TIME:
                 remains = int(COOLDOWN_TIME - elapsed)
-                return bot.send_message(m.chat.id, f"⏳ Подождите еще **{remains}** сек. перед следующей попыткой!", parse_mode="Markdown")
+                mins = remains // 60
+                secs = remains % 60
+                return bot.send_message(m.chat.id, f"⏳ Нужно подождать еще **{mins} мин. {secs} сек.**", parse_mode="Markdown")
         
-        # Оновлюємо час останньої крутки для звичайного користувача
         last_roll[uid] = now
 
     cards = load_db('cards')
@@ -114,7 +113,7 @@ def roll(m):
     )
     bot.send_photo(m.chat.id, won['photo'], caption=caption, parse_mode="Markdown")
 
-# Решта функцій (Профіль, Колекція, Топ)
+# --- ВСЕ ОСТАЛЬНЫЕ ФУНКЦИИ ---
 @bot.message_handler(func=lambda m: m.text == "🏆 Топ игроков")
 def top_players(m):
     users = load_db('users')
@@ -149,53 +148,50 @@ def profile(m):
 def prem(m):
     bot.send_message(m.chat.id, "💎 **Премиум статус**\n\n• Крутки без КД\n✉️ Купить: @verybigsun", parse_mode="Markdown")
 
-# --- [5] АДМИНКА ---
 @bot.message_handler(func=lambda m: m.text == "🛠 Админ-панель")
 def adm(m):
     if m.from_user.username and m.from_user.username.lower() in [a.lower() for a in ADMINS]:
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         markup.row("➕ Добавить карту", "🗑 Удалить карту")
         markup.row("🏠 Назад в меню")
-        bot.send_message(m.chat.id, "🛠 Панель управления администратора:", reply_markup=markup)
+        bot.send_message(m.chat.id, "🛠 Админка:", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == "🗑 Удалить карту")
 def delete_menu(m):
     if m.from_user.username and m.from_user.username.lower() in [a.lower() for a in ADMINS]:
         cards = load_db('cards')
-        if not cards: return bot.send_message(m.chat.id, "❌ База пуста.")
+        if not cards: return bot.send_message(m.chat.id, "❌ Пусто.")
         markup = types.InlineKeyboardMarkup()
         for c in cards:
-            markup.add(types.InlineKeyboardButton(f"❌ Удалить {c['name']}", callback_data=f"del_{c['name']}"))
+            markup.add(types.InlineKeyboardButton(f"❌ {c['name']}", callback_data=f"del_{c['name']}"))
         bot.send_message(m.chat.id, "Выберите карту для удаления:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("del_"))
 def process_delete(call):
-    name_to_delete = call.data.replace("del_", "")
+    name = call.data.replace("del_", "")
     cards = load_db('cards')
-    new_cards = [c for c in cards if c['name'] != name_to_delete]
-    save_db(new_cards, 'cards')
-    bot.answer_callback_query(call.id, f"Удалено")
-    bot.edit_message_text(f"✅ Карта **{name_to_delete}** удалена.", call.message.chat.id, call.message.message_id)
+    save_db([c for c in cards if c['name'] != name], 'cards')
+    bot.edit_message_text(f"✅ Удалено: {name}", call.message.chat.id, call.message.message_id)
 
 @bot.message_handler(func=lambda m: m.text == "➕ Добавить карту")
 def add_start(m):
     if m.from_user.username and m.from_user.username.lower() in [a.lower() for a in ADMINS]:
-        msg = bot.send_message(m.chat.id, "Введите ИМЯ игрока:")
+        msg = bot.send_message(m.chat.id, "Имя игрока:")
         bot.register_next_step_handler(msg, add_step_stars)
 
 def add_step_stars(m):
     name = m.text
-    msg = bot.send_message(m.chat.id, f"Введите РЕЙТИНГ (1-5):")
+    msg = bot.send_message(m.chat.id, "Рейтинг (1-5):")
     bot.register_next_step_handler(msg, add_step_pos, name)
 
 def add_step_pos(m, name):
     stars = m.text
-    msg = bot.send_message(m.chat.id, f"Введите ПОЗИЦИЮ:")
+    msg = bot.send_message(m.chat.id, "Позиция:")
     bot.register_next_step_handler(msg, add_step_photo, name, stars)
 
 def add_step_photo(m, name, stars):
     pos = m.text
-    msg = bot.send_message(m.chat.id, f"Отправьте ФОТО:")
+    msg = bot.send_message(m.chat.id, "Отправьте фото:")
     bot.register_next_step_handler(msg, add_final, name, stars, pos)
 
 def add_final(m, name, stars, pos):
@@ -203,10 +199,10 @@ def add_final(m, name, stars, pos):
     cards = load_db('cards')
     cards.append({"name": name, "stars": int(stars) if stars.isdigit() else 1, "pos": pos, "photo": m.photo[-1].file_id})
     save_db(cards, 'cards')
-    bot.send_message(m.chat.id, f"✅ Карта {name} добавлена!", reply_markup=main_kb(m.from_user))
+    bot.send_message(m.chat.id, "✅ Готово!", reply_markup=main_kb(m.from_user))
 
 @bot.message_handler(func=lambda m: m.text == "🏠 Назад в меню")
 def back(m):
-    bot.send_message(m.chat.id, "Главное меню:", reply_markup=main_kb(m.from_user))
+    bot.send_message(m.chat.id, "Меню:", reply_markup=main_kb(m.from_user))
 
 bot.infinity_polling()
